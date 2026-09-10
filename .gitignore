@@ -1,0 +1,13 @@
+# site repo — ignore tooling & docs
+.opencode/
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+Thumbs.db
+README.md
+mu_extracted.txt
+prog_extracted.txt
+FUTURE.md
+SNAPSHOT.md
+design-system/

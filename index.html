@@ -1,0 +1,667 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Галамарт Склад — Учёт остатков и заявок</title>
+  <meta name="description" content="Веб-приложение для автоматизации складского учёта магазина Галамарт: контроль остатков, заявки поставщикам, отчёты.">
+  <meta name="keywords" content="Галамарт, склад, учёт товаров, заявки, инвентаризация">
+  <meta name="author" content="Галамарт Склад">
+  <meta name="theme-color" content="#334155">
+  <meta property="og:title" content="Галамарт Склад — Учёт остатков">
+  <meta property="og:description" content="Автоматизация складского учёта: остатки, минимальный запас, заявки поставщикам.">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://example.github.io/galamart-stock/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700&family=Rubik:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#334155',
+            accent: '#059669',
+            background: '#F8FAFC',
+            foreground: '#0F172A',
+            muted: '#F2F3F4',
+            'muted-foreground': '#475569',
+            border: '#E6E8EA',
+            destructive: '#DC2626',
+            card: '#FFFFFF'
+          },
+          fontFamily: {
+            heading: ['Rubik', 'sans-serif'],
+            body: ['Nunito Sans', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root{
+      --color-primary:#334155;
+      --color-accent:#059669;
+      --color-background:#F8FAFC;
+      --color-foreground:#0F172A;
+      --color-card:#FFFFFF;
+      --color-muted:#F2F3F4;
+      --color-muted-foreground:#475569;
+      --color-border:#E6E8EA;
+      --color-destructive:#DC2626;
+      --space-xs:4px; --space-sm:8px; --space-md:16px; --space-lg:24px; --space-xl:32px; --space-2xl:48px;
+    }
+    *{scroll-behavior:smooth}
+    @media (prefers-reduced-motion: reduce) {
+      *,*::before,*::after{animation-duration:0.01ms !important;transition-duration:0.01ms !important;scroll-behavior:auto !important}
+    }
+    body{font-family:'Nunito Sans',sans-serif;background:var(--color-background);color:var(--color-foreground)}
+    h1,h2,h3,h4{font-family:'Rubik',sans-serif}
+    :focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+    .btn-primary{background:var(--color-accent);color:#fff;padding:12px 24px;border-radius:8px;font-weight:600;transition:opacity 200ms ease, transform 200ms ease;cursor:pointer;border:none}
+    .btn-primary:hover{opacity:0.92;transform:translateY(-1px)}
+    .btn-primary:active{transform:translateY(0)}
+    .btn-secondary{background:transparent;color:var(--color-primary);border:2px solid var(--color-primary);padding:10px 22px;border-radius:8px;font-weight:600;transition:all 200ms ease;cursor:pointer}
+    .btn-secondary:hover{background:var(--color-primary);color:#fff}
+    .btn-ghost{background:transparent;color:var(--color-primary);padding:8px 14px;border-radius:8px;font-weight:600;transition:background 200ms ease;cursor:pointer;border:none}
+    .btn-ghost:hover{background:var(--color-muted)}
+    .card{background:var(--color-card);border:1px solid var(--color-border);border-radius:12px;transition:transform 200ms ease, box-shadow 200ms ease}
+    .card-hover:hover{transform:translateY(-2px);box-shadow:0 10px 15px rgba(0,0,0,0.06)}
+    .input{padding:12px 16px;border:1px solid var(--color-border);border-radius:8px;font-size:16px;background:#fff;transition:border-color 200ms ease, box-shadow 200ms ease;width:100%}
+    .input:focus{border-color:var(--color-primary);outline:none;box-shadow:0 0 0 3px rgba(51,65,85,0.12)}
+    .badge{padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:0.02em}
+    .badge-green{background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0}
+    .badge-yellow{background:#FFFBEB;color:#92400E;border:1px solid #FDE68A}
+    .badge-red{background:#FEF2F2;color:#991B1B;border:1px solid #FECACA}
+    .badge-slate{background:#F1F5F9;color:#334155;border:1px solid #E2E8F0}
+    /* Skip link */
+    .skip-link{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
+    .skip-link:focus{left:12px;top:12px;width:auto;height:auto;padding:8px 16px;background:var(--color-primary);color:#fff;border-radius:8px;z-index:9999}
+  </style>
+</head>
+<body class="antialiased">
+  <a href="#main" class="skip-link">Перейти к содержимому</a>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-border">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-[64px]">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center text-white">
+            <i data-lucide="package" class="w-5 h-5" aria-hidden="true"></i>
+          </div>
+            <div>
+            <div class="font-heading font-semibold text-[16px] leading-none text-primary">Галамарт</div>
+            <div class="text-[11px] tracking-[0.14em] font-bold text-muted-foreground uppercase -mt-0.5">Склад • Новосибирск</div>
+          </div>
+        </div>
+
+        <nav class="hidden lg:flex items-center gap-1" aria-label="Основная навигация">
+          <a href="#dashboard" class="nav-link px-3 py-2 rounded-lg text-sm font-semibold text-primary bg-muted cursor-pointer transition-colors">Дашборд</a>
+          <a href="#products" class="nav-link px-3 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-primary hover:bg-muted cursor-pointer transition-colors">Товары</a>
+          <a href="#orders" class="nav-link px-3 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-primary hover:bg-muted cursor-pointer transition-colors">Заявки</a>
+          <a href="#reports" class="nav-link px-3 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-primary hover:bg-muted cursor-pointer transition-colors">Отчёты</a>
+          <a id="navAdmin" href="#admin" class="hidden nav-link px-3 py-2 rounded-lg text-sm font-semibold text-accent hover:bg-[#ECFDF5] cursor-pointer">Админ</a>
+        </nav>
+
+        <div class="flex items-center gap-2">
+          <button id="btnNewProductHeader" class="hidden sm:inline-flex btn-primary text-sm !py-2 !px-4 cursor-pointer">
+            <span class="flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4" aria-hidden="true"></i> Товар</span>
+          </button>
+          <div id="authHeader" class="flex items-center gap-2"></div>
+          <button id="btnMobileMenu" class="lg:hidden p-2 rounded-lg hover:bg-muted cursor-pointer transition-colors" aria-label="Открыть меню" aria-expanded="false" aria-controls="mobileNav">
+            <i data-lucide="menu" class="w-6 h-6 text-primary" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+      <!-- Mobile nav -->
+      <div id="mobileNav" class="hidden lg:hidden pb-4 border-t border-border mt-2 pt-3">
+        <nav class="flex flex-col gap-1" aria-label="Мобильная навигация">
+          <a href="#dashboard" class="px-3 py-2.5 rounded-lg text-sm font-semibold bg-muted text-primary cursor-pointer">Дашборд</a>
+          <a href="#products" class="px-3 py-2.5 rounded-lg text-sm font-semibold text-muted-foreground cursor-pointer">Товары</a>
+          <a href="#orders" class="px-3 py-2.5 rounded-lg text-sm font-semibold text-muted-foreground cursor-pointer">Заявки</a>
+          <a href="#reports" class="px-3 py-2.5 rounded-lg text-sm font-semibold text-muted-foreground cursor-pointer">Отчёты</a>
+          <a id="navAdminMobile" href="#admin" class="hidden px-3 py-2.5 rounded-lg text-sm font-semibold text-accent cursor-pointer">Админ</a>
+          <button id="btnNewProductMobile" class="mt-2 btn-primary w-full cursor-pointer">Добавить товар</button>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Онбординг — интуитивный старт (скипабелен) -->
+  <div id="onboard" class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+    <div class="rounded-xl bg-white border border-[#A7F3D0] p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div class="flex items-center gap-3 flex-1">
+        <div class="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center shrink-0"><i data-lucide="sparkles" class="w-4 h-4" aria-hidden="true"></i></div>
+        <div>
+          <div class="text-sm font-semibold text-primary">Как пользоваться за 3 шага</div>
+          <div class="text-sm text-muted-foreground"><span class="font-semibold text-primary">1.</span> Проверь «Дефицит» на дашборде → <span class="font-semibold text-primary">2.</span> Нажми «Заявка из дефицита» → <span class="font-semibold text-primary">3.</span> Отправь поставщику</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <a href="#products" class="btn-primary !py-2 !px-4 text-sm cursor-pointer">Перейти к товарам</a>
+        <button id="btnOnboardSkip" class="btn-ghost text-sm cursor-pointer">Скрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <main id="main">
+    <!-- Hero Feature-Rich Showcase -->
+    <section class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 lg:pt-10">
+      <div class="grid lg:grid-cols-2 gap-8 lg:gap-10 items-center">
+        <div>
+          <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-border text-xs font-bold tracking-wide text-primary">
+            <span class="w-2 h-2 rounded-full bg-accent"></span>
+            Автоматизация без Excel
+          </div>
+          <h1 class="font-heading text-[28px] sm:text-[36px] lg:text-[42px] font-semibold leading-[1.05] tracking-tight text-primary mt-4">
+            Склад Галамарт<br>
+            <span class="text-accent">без пересортицы</span><br>
+            и дефицита
+          </h1>
+          <p class="mt-4 text-[16px] lg:text-[18px] leading-relaxed text-muted-foreground max-w-[560px]">
+            Контроль минимальных остатков, подсветка дефицита и заявки поставщикам в один клик.
+          </p>
+          <div class="mt-6 flex flex-wrap gap-3">
+            <a href="#products" class="btn-primary inline-flex items-center gap-2 cursor-pointer">
+              Начать — к товарам <i data-lucide="arrow-right" class="w-4 h-4" aria-hidden="true"></i>
+            </a>
+            <a href="#dashboard" class="btn-ghost inline-flex items-center gap-2 cursor-pointer text-sm">
+              <i data-lucide="layout-dashboard" class="w-4 h-4" aria-hidden="true"></i> Посмотреть дашборд
+            </a>
+          </div>
+          <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+            <span class="badge badge-green">В норме</span><span class="text-muted-foreground">— всего хватает</span>
+            <span class="badge badge-yellow">На грани</span><span class="text-muted-foreground">— скоро дефицит</span>
+            <span class="badge badge-red">Дефицит</span><span class="text-muted-foreground">— нужно заказать</span>
+          </div>
+        </div>
+        <div class="relative">
+          <div class="card p-4 sm:p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="font-heading font-semibold text-primary">Снимок склада</h2>
+              <span id="heroDate" class="text-xs font-semibold text-muted-foreground"></span>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-xl bg-muted p-4 border border-border">
+                <div class="text-xs font-bold tracking-wide text-muted-foreground uppercase">Всего товаров</div>
+                <div id="heroTotal" class="font-heading text-2xl font-semibold text-primary mt-1">—</div>
+                <div class="text-xs text-muted-foreground mt-1">категорий <span id="heroCats">—</span></div>
+              </div>
+              <div class="rounded-xl bg-white p-4 border border-border">
+                <div class="text-xs font-bold tracking-wide text-muted-foreground uppercase">Дефицит</div>
+                <div id="heroLow" class="font-heading text-2xl font-semibold text-destructive mt-1">—</div>
+                <div class="text-xs text-muted-foreground mt-1">требуют заявки</div>
+              </div>
+              <div class="rounded-xl bg-white p-4 border border-border">
+                <div class="text-xs font-bold tracking-wide text-muted-foreground uppercase">На сумму</div>
+                <div id="heroSum" class="font-heading text-2xl font-semibold text-primary mt-1">—</div>
+                <div class="text-xs text-muted-foreground mt-1">по закупке</div>
+              </div>
+              <div class="rounded-xl bg-[#ECFDF5] p-4 border border-[#A7F3D0]">
+                <div class="text-xs font-bold tracking-wide text-[#065F46] uppercase">Заявок</div>
+                <div id="heroOrders" class="font-heading text-2xl font-semibold text-[#065F46] mt-1">—</div>
+                <div class="text-xs text-[#065F46] mt-1">в работе</div>
+              </div>
+            </div>
+
+          </div>
+          <div class="hidden lg:block absolute -z-10 -top-4 -right-4 w-full h-full rounded-2xl border border-border bg-white/50"></div>
+        </div>
+      </div>
+
+      <!-- Упрощено: 3 понятных шага вместо 4 карточек -->
+      <div class="grid sm:grid-cols-3 gap-4 mt-8">
+        <div class="card p-5">
+          <div class="w-9 h-9 rounded-lg bg-muted flex items-center justify-center"><i data-lucide="search" class="w-5 h-5 text-primary" aria-hidden="true"></i></div>
+          <h3 class="font-heading font-semibold mt-3 text-primary">1. Найди дефицит</h3>
+          <p class="text-sm text-muted-foreground mt-1 leading-relaxed">Красный бейдж — закажи сейчас. Фильтр «Только дефицит» в один клик.</p>
+        </div>
+        <div class="card p-5 border-accent/20">
+          <div class="w-9 h-9 rounded-lg bg-[#ECFDF5] flex items-center justify-center"><i data-lucide="clipboard-plus" class="w-5 h-5 text-accent" aria-hidden="true"></i></div>
+          <h3 class="font-heading font-semibold mt-3 text-primary">2. Собери заявку</h3>
+          <p class="text-sm text-muted-foreground mt-1 leading-relaxed">Кнопка «Заявка из дефицита» сама выберет товары по поставщику.</p>
+        </div>
+        <div class="card p-5">
+          <div class="w-9 h-9 rounded-lg bg-muted flex items-center justify-center"><i data-lucide="truck" class="w-5 h-5 text-primary" aria-hidden="true"></i></div>
+          <h3 class="font-heading font-semibold mt-3 text-primary">3. Отправь и получи</h3>
+          <p class="text-sm text-muted-foreground mt-1 leading-relaxed">Смени статус на «Получена» — остатки увеличатся автоматически.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="dashboard" class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-10 scroll-mt-[80px]">
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 class="font-heading text-[22px] font-semibold text-primary">Дашборд</h2>
+          <p class="text-sm text-muted-foreground mt-1">Сводка по складу. Обновляется автоматически.</p>
+        </div>
+        <div class="flex gap-2">
+          <button id="btnExportPdf" class="btn-primary !py-2 !px-3 text-sm inline-flex items-center gap-2 cursor-pointer"><i data-lucide="file-text" class="w-4 h-4" aria-hidden="true"></i> PDF сводки</button>
+          <button id="btnExportExcel" class="btn-secondary !py-2 !px-3 text-sm inline-flex items-center gap-2 cursor-pointer"><i data-lucide="sheet" class="w-4 h-4" aria-hidden="true"></i> Excel сводки</button>
+          <button id="btnReset" class="btn-ghost !py-2 !px-3 text-sm inline-flex items-center gap-2 cursor-pointer text-destructive"><i data-lucide="rotate-ccw" class="w-4 h-4" aria-hidden="true"></i> Сброс демо</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+        <div class="card p-5">
+          <div class="text-xs font-bold tracking-wide text-muted-foreground uppercase">Всего товаров</div>
+          <div id="statTotal" class="font-heading text-[28px] font-semibold text-primary mt-1">0</div>
+          <div id="statTotalSub" class="text-xs text-muted-foreground">—</div>
+        </div>
+        <div class="card p-5 border-l-4 border-l-destructive">
+          <div class="text-xs font-bold tracking-wide text-muted-foreground uppercase">Дефицит</div>
+          <div id="statLow" class="font-heading text-[28px] font-semibold text-destructive mt-1">0</div>
+          <button id="btnFilterLow" class="text-xs font-semibold text-destructive underline decoration-dotted cursor-pointer mt-1">Показать дефицитные</button>
+        </div>
+        <div class="card p-5">
+          <div class="text-xs font-bold tracking-wide text-muted-foreground uppercase">Заявок в работе</div>
+          <div id="statOrders" class="font-heading text-[28px] font-semibold text-primary mt-1">0</div>
+          <div class="text-xs text-muted-foreground">новая • отправлена</div>
+        </div>
+        <div class="card p-5">
+          <div class="text-xs font-bold tracking-wide text-muted-foreground uppercase">Стоимость остатков</div>
+          <div id="statValue" class="font-heading text-[28px] font-semibold text-primary mt-1">0 ₽</div>
+          <div class="text-xs text-muted-foreground">по цене закупки</div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-3 gap-4 mt-4">
+        <div class="card p-5 lg:col-span-2">
+          <div class="flex items-center justify-between">
+            <h3 class="font-heading font-semibold text-primary">Дефицитные позиции (топ-5)</h3>
+            <a href="#products" class="text-sm font-semibold text-accent hover:underline cursor-pointer">Все товары</a>
+          </div>
+          <div id="dashboardLowList" class="mt-4 space-y-2"></div>
+        </div>
+        <div class="card p-5">
+          <h3 class="font-heading font-semibold text-primary">Поставщики</h3>
+          <p class="text-sm text-muted-foreground">Нагрузка по заявкам</p>
+          <div id="supplierBars" class="mt-4 space-y-3"></div>
+          <div class="mt-4 rounded-lg bg-muted p-3 text-xs leading-relaxed text-muted-foreground">
+            <span class="font-semibold text-primary">Процесс:</span> от проверки остатков до получения поставки.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Products -->
+    <section id="products" class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-10 scroll-mt-[80px]">
+      <div class="card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="font-heading text-[22px] font-semibold text-primary">Товары и остатки</h2>
+            <p class="text-sm text-muted-foreground">Поиск и фильтры, добавление и редактирование товаров.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button id="btnAddProduct" class="btn-secondary inline-flex items-center gap-2 cursor-pointer"><i data-lucide="plus" class="w-4 h-4" aria-hidden="true"></i> Добавить товар</button>
+            <button id="btnMakeOrderFromLow" class="btn-primary inline-flex items-center gap-2 cursor-pointer" title="Собирает все дефицитные товары"><i data-lucide="clipboard-plus" class="w-4 h-4" aria-hidden="true"></i> Заявка из дефицита</button>
+          </div>
+        </div>
+
+        <div class="grid lg:grid-cols-12 gap-3 mt-5">
+          <label class="lg:col-span-5 relative">
+            <span class="sr-only">Поиск товара</span>
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true"></i>
+            <input id="searchInput" class="input !pl-9" type="search" placeholder="Поиск по названию, артикулу, поставщику" autocomplete="off">
+          </label>
+          <label class="lg:col-span-3">
+            <span class="sr-only">Фильтр по категории</span>
+            <select id="categoryFilter" class="input cursor-pointer"></select>
+          </label>
+          <label class="lg:col-span-2">
+            <span class="sr-only">Фильтр по статусу</span>
+            <select id="stockFilter" class="input cursor-pointer">
+              <option value="all">Все остатки</option>
+              <option value="low">Только дефицит</option>
+              <option value="warn">На грани</option>
+              <option value="ok">В норме</option>
+            </select>
+          </label>
+          <label class="lg:col-span-2">
+            <span class="sr-only">Сортировка</span>
+            <select id="sortSelect" class="input cursor-pointer">
+              <option value="name">Сорт: А–Я</option>
+              <option value="stockAsc">Остаток ↑</option>
+              <option value="stockDesc">Остаток ↓</option>
+              <option value="priceDesc">Цена ↓</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Desktop table -->
+        
+        <div class="hidden md:block mt-4 overflow-x-auto rounded-xl border border-border">
+          <table class="w-full text-sm">
+            <thead class="bg-muted text-left">
+              <tr class="text-xs tracking-wide text-muted-foreground uppercase">
+                <th class="px-4 py-3 font-semibold">Артикул</th>
+                <th class="px-4 py-3 font-semibold">Товар</th>
+                <th class="px-4 py-3 font-semibold">Категория</th>
+                <th class="px-4 py-3 font-semibold">Поставщик</th>
+                <th class="px-4 py-3 font-semibold">Остаток</th>
+                <th class="px-4 py-3 font-semibold">Мин</th>
+                <th class="px-4 py-3 font-semibold">Статус</th>
+                <th class="px-4 py-3 font-semibold">Цена</th>
+                <th class="px-4 py-3 font-semibold text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="productsTbody" class="divide-y divide-border bg-white"></tbody>
+          </table>
+        </div>
+        <!-- Mobile cards -->
+        <div id="productsCards" class="md:hidden mt-4 grid gap-3"></div>
+        <div id="productsEmpty" class="hidden mt-6 rounded-xl border border-dashed border-border p-8 text-center">
+          <i data-lucide="package-x" class="w-8 h-8 mx-auto text-muted-foreground" aria-hidden="true"></i>
+          <p class="mt-2 font-semibold text-primary">Ничего не найдено</p>
+          <p class="text-sm text-muted-foreground">Попробуй сбросить фильтры</p>
+          <button id="btnClearFilters" class="mt-3 btn-primary !py-2 text-sm cursor-pointer">Сбросить фильтры</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Orders -->
+    <section id="orders" class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-10 scroll-mt-[80px]">
+      <div class="card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="font-heading text-[22px] font-semibold text-primary">Заявки поставщикам</h2>
+            <p class="text-sm text-muted-foreground">Статусы: новая → отправлена → получена. При получении остатки увеличиваются.</p>
+          </div>
+          <div class="flex gap-2">
+            <select id="orderStatusFilter" class="input !py-2 !px-3 text-sm cursor-pointer w-auto">
+              <option value="all">Все статусы</option>
+              <option value="new">Новая</option>
+              <option value="sent">Отправлена</option>
+              <option value="received">Получена</option>
+            </select>
+            <button id="btnNewOrder" class="btn-primary !py-2 inline-flex items-center gap-2 cursor-pointer text-sm"><i data-lucide="plus" class="w-4 h-4" aria-hidden="true"></i> Новая заявка</button>
+          </div>
+        </div>
+        <div class="hidden md:block mt-4 overflow-x-auto rounded-xl border border-border">
+          <table class="w-full text-sm">
+            <thead class="bg-muted text-left">
+              <tr class="text-xs tracking-wide text-muted-foreground uppercase">
+                <th class="px-4 py-3 font-semibold">№</th>
+                <th class="px-4 py-3 font-semibold">Поставщик</th>
+                <th class="px-4 py-3 font-semibold">Дата</th>
+                <th class="px-4 py-3 font-semibold">Позиций</th>
+                <th class="px-4 py-3 font-semibold">Сумма</th>
+                <th class="px-4 py-3 font-semibold">Статус</th>
+                <th class="px-4 py-3 font-semibold text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="ordersTbody" class="divide-y divide-border bg-white"></tbody>
+          </table>
+        </div>
+        <div id="ordersCards" class="md:hidden mt-4 grid gap-3"></div>
+        <div id="ordersEmpty" class="hidden mt-6 rounded-xl border border-dashed border-border p-8 text-center">
+          <p class="font-semibold text-primary">Заявок нет</p>
+          <p class="text-sm text-muted-foreground">Создай из дефицита или вручную</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reports -->
+    <section id="reports" class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-10 scroll-mt-[80px] mb-10">
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div class="card p-5">
+          <div class="flex items-center justify-between">
+            <h2 class="font-heading font-semibold text-primary">Отчёт: Дефицит</h2>
+            <div class="flex gap-2">
+              <button id="btnPdfDeficit" class="btn-primary !py-1.5 !px-3 text-sm inline-flex items-center gap-2 cursor-pointer"><i data-lucide="file-text" class="w-4 h-4" aria-hidden="true"></i> PDF</button>
+              <button id="btnExcelDeficit" class="btn-secondary !py-1.5 !px-3 text-sm inline-flex items-center gap-2 cursor-pointer"><i data-lucide="sheet" class="w-4 h-4" aria-hidden="true"></i> Excel</button>
+              <button id="btnPrintDeficit" class="btn-ghost text-sm inline-flex items-center gap-2 cursor-pointer"><i data-lucide="printer" class="w-4 h-4" aria-hidden="true"></i> Печать</button>
+            </div>
+          </div>
+          <p class="text-sm text-muted-foreground mt-1">Список товаров для пополнения. Можно распечатать.</p>
+          <div class="mt-4 overflow-x-auto rounded-xl border border-border">
+            <table class="w-full text-sm">
+              <thead class="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground"><tr><th class="px-3 py-2">Товар</th><th class="px-3 py-2">Нужно</th><th class="px-3 py-2">Поставщик</th></tr></thead>
+              <tbody id="reportDeficit" class="divide-y divide-border bg-white"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card p-5">
+          <h2 class="font-heading font-semibold text-primary">Отчёт: Стоимость по категориям</h2>
+          <p class="text-sm text-muted-foreground mt-1">Стоимость остатков по категориям.</p>
+          <div id="reportBars" class="mt-4 space-y-3"></div>
+          <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div class="rounded-lg bg-muted p-3 border border-border"><div class="text-xs font-bold uppercase text-muted-foreground">Средний запас</div><div id="reportAvg" class="font-heading font-semibold text-primary">—</div></div>
+            <div class="rounded-lg bg-muted p-3 border border-border"><div class="text-xs font-bold uppercase text-muted-foreground">В норме</div><div id="reportOk" class="font-heading font-semibold text-primary">—</div></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Admin (только для admin) -->
+    <section id="admin" class="hidden max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 mt-10 scroll-mt-[80px] mb-10">
+      <div class="card p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="font-heading text-[22px] font-semibold text-primary">Админ-панель</h2>
+            <p class="text-sm text-muted-foreground">Только для тебя. Одобряй заявки на вход, меняй роли, отклоняй.</p>
+          </div>
+          <span class="badge badge-green">Доступ: admin</span>
+        </div>
+        <form id="adminCreateForm" class="mt-4 grid md:grid-cols-5 gap-2 items-end bg-muted p-3 rounded-xl border border-border">
+          <label class="text-xs font-semibold">Логин<input id="admLogin" required class="input !py-2 mt-1" placeholder="ivan"></label>
+          <label class="text-xs font-semibold">Имя<input id="admName" required class="input !py-2 mt-1" placeholder="Иван"></label>
+          <label class="text-xs font-semibold">Пароль<input id="admPass" type="password" required class="input !py-2 mt-1" placeholder="••••••••"></label>
+          <label class="text-xs font-semibold">Повтори<input id="admPass2" type="password" required class="input !py-2 mt-1" placeholder="••••••••"></label>
+          <div class="flex gap-2">
+            <select id="admRole" class="input !py-2 cursor-pointer flex-1 text-sm"><option value="manager">Товаровед</option><option value="director">Директор</option><option value="admin">Админ</option></select>
+            <button type="submit" class="btn-primary !py-2 text-sm cursor-pointer whitespace-nowrap">Создать</button>
+          </div>
+        </form>
+        <p id="adminCreateMsg" class="text-xs font-semibold mt-2" aria-live="polite"></p>
+        <div class="hidden md:block mt-4 overflow-x-auto rounded-xl border border-border">
+          <table class="w-full text-sm">
+            <thead class="bg-muted text-left">
+              <tr class="text-xs tracking-wide text-muted-foreground uppercase">
+                <th class="px-4 py-3 font-semibold">Логин</th>
+                <th class="px-4 py-3 font-semibold">Имя</th>
+                <th class="px-4 py-3 font-semibold">Роль</th>
+                <th class="px-4 py-3 font-semibold">Пароль</th>
+                <th class="px-4 py-3 font-semibold">Дата</th>
+                <th class="px-4 py-3 font-semibold text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="adminTbody" class="divide-y divide-border bg-white"></tbody>
+          </table>
+        </div>
+        <div id="adminCards" class="md:hidden mt-4 grid gap-3"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-border bg-white">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm">
+        <div class="text-muted-foreground">© 2026 Галамарт Склад</div>
+        <div class="flex items-center gap-3">
+          <a href="#dashboard" class="font-semibold text-primary hover:underline cursor-pointer">Наверх</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Product Modal -->
+  <div id="productModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="productModalTitle">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" data-close-modal></div>
+    <div class="relative min-h-full flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-[640px] max-h-[90vh] overflow-auto">
+        <div class="sticky top-0 bg-white border-b border-border px-6 py-4 flex items-center justify-between">
+          <h3 id="productModalTitle" class="font-heading font-semibold text-primary text-lg">Товар</h3>
+          <button class="p-2 rounded-lg hover:bg-muted cursor-pointer" data-close-modal aria-label="Закрыть"><i data-lucide="x" class="w-5 h-5" aria-hidden="true"></i></button>
+        </div>
+        <form id="productForm" class="p-6 space-y-4">
+          <input type="hidden" id="productId">
+          <div class="grid sm:grid-cols-2 gap-4">
+            <label class="text-sm font-semibold">Название *<input id="pName" required class="input mt-1" placeholder="Набор посуды 12 пр."></label>
+            <label class="text-sm font-semibold">Артикул *<input id="pSku" required class="input mt-1" placeholder="GLM-00123"></label>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <label class="text-sm font-semibold">Категория *<select id="pCategory" required class="input cursor-pointer"></select></label>
+            <label class="text-sm font-semibold">Поставщик *<select id="pSupplier" required class="input cursor-pointer"></select></label>
+          </div>
+          <div class="grid sm:grid-cols-3 gap-4">
+            <label class="text-sm font-semibold">Остаток *<input id="pQty" type="number" min="0" max="99999" step="1" required class="input mt-1" placeholder="12"></label>
+            <label class="text-sm font-semibold">Мин. запас *<input id="pMin" type="number" min="1" max="9999" step="1" required class="input mt-1" placeholder="10"></label>
+            <label class="text-sm font-semibold">Цена закупки *<input id="pPrice" type="number" min="0" max="1000000" step="0.01" required class="input mt-1" placeholder="1290"></label>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <label class="text-sm font-semibold">Ячейка<input id="pLocation" class="input mt-1" placeholder="A-12-03"></label>
+            <label class="text-sm font-semibold">Ед. изм.<select id="pUnit" class="input cursor-pointer mt-1"><option value="шт">шт</option><option value="уп">уп</option><option value="набор">набор</option><option value="комплект">комплект</option><option value="пар">пар</option><option value="л">л</option><option value="кг">кг</option><option value="м">м</option><option value="рул">рул</option><option value="блок">блок</option><option value="ящ">ящ</option></select></label>
+          </div>
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" class="btn-ghost cursor-pointer" data-close-modal>Отмена</button>
+            <button type="submit" class="btn-primary cursor-pointer">Сохранить</button>
+          </div>
+          <p class="text-xs text-muted-foreground">* — обязательные поля.</p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Modal -->
+  <div id="orderModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="orderModalTitle">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" data-close-order></div>
+    <div class="relative min-h-full flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-[720px] max-h-[90vh] overflow-auto">
+        <div class="sticky top-0 bg-white border-b border-border px-6 py-4 flex items-center justify-between">
+          <h3 id="orderModalTitle" class="font-heading font-semibold text-primary text-lg">Новая заявка</h3>
+          <button class="p-2 rounded-lg hover:bg-muted cursor-pointer" data-close-order aria-label="Закрыть"><i data-lucide="x" class="w-5 h-5" aria-hidden="true"></i></button>
+        </div>
+        <form id="orderForm" class="p-6 space-y-4">
+          <div class="grid sm:grid-cols-2 gap-4">
+            <label class="text-sm font-semibold">Поставщик *<select id="oSupplier" required class="input cursor-pointer"></select></label>
+            <label class="text-sm font-semibold">Комментарий<input id="oComment" class="input mt-1" placeholder="Срочно, до пятницы"></label>
+          </div>
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-semibold">Позиции</span>
+              <span class="text-xs text-muted-foreground">Отмечены дефицитные этого поставщика</span>
+            </div>
+            <div class="flex gap-2 mt-2">
+              <select id="oCategoryFilter" class="input !py-1 text-sm cursor-pointer flex-1"><option value="all">Все категории</option></select>
+              <label class="flex items-center gap-2 text-sm font-semibold cursor-pointer whitespace-nowrap"><input type="checkbox" id="oOnlyLow" checked class="w-4 h-4 rounded border-border"> Только дефицит</label>
+            </div>
+            <div id="orderItems" class="mt-2 max-h-[320px] overflow-auto rounded-xl border border-border divide-y divide-border"></div>
+            <div class="flex gap-2 mt-2">
+              <button type="button" id="btnSelectAll" class="btn-ghost !py-1 text-xs cursor-pointer border border-border">Выбрать все</button>
+              <button type="button" id="btnDeselectAll" class="btn-ghost !py-1 text-xs cursor-pointer border border-border">Снять все</button>
+            </div>
+          </div>
+          <div class="flex justify-between items-center pt-2">
+            <div class="text-sm"><span class="text-muted-foreground">Итого позиций:</span> <span id="orderCount" class="font-semibold">0</span> • <span id="orderSum" class="font-semibold">0 ₽</span></div>
+            <div class="flex gap-2">
+              <button type="button" class="btn-ghost cursor-pointer" data-close-order>Отмена</button>
+              <button type="submit" class="btn-primary cursor-pointer">Создать заявку</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Confirm -->
+  <div id="adminConfirmModal" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" data-close-confirm></div>
+    <div class="relative min-h-full flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-[400px] p-6">
+        <h3 class="font-heading font-semibold text-primary">Подтверди пароль админа</h3>
+        <p class="text-sm text-muted-foreground mt-1">Для безопасности введи пароль</p>
+        <input id="adminConfirmPass" type="password" class="input mt-3" placeholder="Пароль">
+        <p id="adminConfirmMsg" class="text-xs font-semibold text-destructive mt-2"></p>
+        <div class="flex justify-end gap-2 mt-4">
+          <button id="btnConfirmCancel" class="btn-ghost cursor-pointer">Отмена</button>
+          <button id="btnConfirmOk" class="btn-primary cursor-pointer">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 hidden">
+    <div class="bg-primary text-white px-4 py-3 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2">
+      <i data-lucide="check-circle" class="w-4 h-4" aria-hidden="true"></i> <span id="toastMsg">Готово</span>
+    </div>
+  </div>
+
+  <!-- Auth Overlay -->
+  <div id="authOverlay" class="fixed inset-0 z-[60] hidden bg-background/95 backdrop-blur flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-[420px] border border-border">
+      <div class="p-6">
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-9 h-9 rounded-lg bg-primary flex items-center justify-center text-white"><i data-lucide="package" class="w-5 h-5" aria-hidden="true"></i></div>
+          <div>
+            <div class="font-heading font-semibold text-primary">Вход в склад</div>
+            <div class="text-xs text-muted-foreground">Галамарт — доступ по логину</div>
+          </div>
+        </div>
+        <form id="loginForm" class="space-y-3">
+          <label class="text-sm font-semibold block">Логин<input id="loginLogin" required class="input mt-1" placeholder="admin" autocomplete="username"></label>
+          <label class="text-sm font-semibold block">Пароль<input id="loginPass" type="password" required class="input mt-1" placeholder="••••••••" autocomplete="current-password"></label>
+          <button type="submit" class="btn-primary w-full cursor-pointer">Войти</button>
+        </form>
+        <p id="authMsg" class="text-sm font-semibold mt-3" aria-live="polite"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/js/app.js"></script>
+  <script>
+    (function(){
+      const btn=document.getElementById('btnMobileMenu');
+      const nav=document.getElementById('mobileNav');
+      if(btn&&nav){
+        btn.addEventListener('click',()=>{
+          const open=nav.classList.toggle('hidden');
+          btn.setAttribute('aria-expanded', String(!open));
+          const icon=btn.querySelector('i');
+          if(icon){ icon.setAttribute('data-lucide', open? 'menu':'x'); lucide.createIcons(); }
+        });
+      }
+      const d=document.getElementById('heroDate');
+      if(d) d.textContent=new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'short'});
+      const links=document.querySelectorAll('.nav-link');
+      const obs=new IntersectionObserver((entries)=>{
+        entries.forEach(e=>{
+          if(e.isIntersecting){
+            links.forEach(l=>{l.classList.remove('bg-muted','text-primary','border-b-2','border-primary'); l.classList.add('text-muted-foreground');});
+            const a=document.querySelector(`.nav-link[href="#${e.target.id}"]`);
+            if(a){ a.classList.remove('text-muted-foreground'); a.classList.add('bg-muted','text-primary','border-b-2','border-primary'); }
+          }
+        });
+      },{rootMargin:'-40% 0px -50% 0px'});
+      document.querySelectorAll('section[id]').forEach(s=>obs.observe(s));
+      // онбординг — скипабелен, запоминаем
+      const onboard=document.getElementById('onboard');
+      const skip=document.getElementById('btnOnboardSkip');
+      if(localStorage.getItem('galamart_onboard_hidden')==='1' && onboard) onboard.classList.add('hidden');
+      if(skip) skip.addEventListener('click',()=>{ onboard.classList.add('hidden'); localStorage.setItem('galamart_onboard_hidden','1'); });
+      // сброс фильтров из empty state
+      document.getElementById('btnClearFilters')?.addEventListener('click',()=>{
+        const s=document.getElementById('searchInput'); if(s) s.value='';
+        const c=document.getElementById('categoryFilter'); if(c) c.value='all';
+        const f=document.getElementById('stockFilter'); if(f) f.value='all';
+        // триггерим ререндер через событие
+        document.getElementById('searchInput')?.dispatchEvent(new Event('input'));
+        document.getElementById('categoryFilter')?.dispatchEvent(new Event('change'));
+        document.getElementById('stockFilter')?.dispatchEvent(new Event('change'));
+      });
+      // делаем кнопку из онбординга рабочей даже если старая удалена
+      document.getElementById('btnCreateOrderQuick')?.addEventListener('click',()=> document.getElementById('btnMakeOrderFromLow')?.click());
+      if(window.lucide) lucide.createIcons();
+    })();
+  </script>
+</body>
+</html>
