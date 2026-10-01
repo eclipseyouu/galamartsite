@@ -450,6 +450,95 @@ function renderReports(){
   const ok = state.products.filter(p=> statusOf(p).key==='ok').length;
   $('#reportAvg') && ($('#reportAvg').textContent = avg + ' шт');
   $('#reportOk') && ($('#reportOk').textContent = ok);
+  renderPeriodReport();
+}
+
+function isoDate(d){
+  const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function fmtIso(iso){ if(!iso || iso.length<10) return iso || '—'; const [y,m,d]=iso.split('-'); return `${d}.${m}.${y}`; }
+function periodRange(){
+  const preset = $('#periodPreset')?.value || '30';
+  const today = new Date();
+  if(preset==='all') return {from:'0000-01-01', to:'9999-12-31', text:'Всё время'};
+  if(preset==='custom'){
+    const from = $('#periodFrom')?.value || '0000-01-01';
+    const to = $('#periodTo')?.value || '9999-12-31';
+    const txt = (from==='0000-01-01'?'начало':'с '+fmtIso(from)) + ' — ' + (to==='9999-12-31'?'сегодня':fmtIso(to));
+    return {from, to, text:txt};
+  }
+  if(preset==='month'){
+    const from = isoDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    const to = isoDate(today);
+    return {from, to, text:'Текущий месяц: '+fmtIso(from)+' — '+fmtIso(to)};
+  }
+  if(preset==='prevmonth'){
+    const from = isoDate(new Date(today.getFullYear(), today.getMonth()-1, 1));
+    const to = isoDate(new Date(today.getFullYear(), today.getMonth(), 0));
+    return {from, to, text:'Прошлый месяц: '+fmtIso(from)+' — '+fmtIso(to)};
+  }
+  const days = Number(preset) || 30;
+  const from = new Date(today); from.setDate(from.getDate()-(days-1));
+  return {from: isoDate(from), to: isoDate(today), text:`Последние ${days} дней: ${fmtIso(isoDate(from))} — ${fmtIso(isoDate(today))}`};
+}
+function orderStatusMeta(s){
+  if(s==='new') return {badge:'badge-yellow', label:'Новая'};
+  if(s==='sent') return {badge:'badge-slate', label:'Отправлена'};
+  return {badge:'badge-green', label:'Получена'};
+}
+function periodOrders(){
+  const {from,to} = periodRange();
+  return [...state.orders]
+    .filter(o=> (o.created||'') >= from && (o.created||'') <= to)
+    .sort((a,b)=> (b.created||'').localeCompare(a.created||'') || b.id-a.id);
+}
+function periodStats(){
+  const arr = periodOrders();
+  const items = arr.reduce((s,o)=> s + o.items.reduce((a,it)=>a+it.qty,0), 0);
+  const sum = arr.reduce((s,o)=> s + o.items.reduce((a,it)=>a+it.qty*it.price,0), 0);
+  return {arr, items, sum};
+}
+function renderPeriodReport(){
+  const {text} = periodRange();
+  const {arr, items, sum} = periodStats();
+  const lbl = $('#periodLabel'); if(lbl) lbl.textContent = text;
+  $('#periodOrders') && ($('#periodOrders').textContent = arr.length);
+  $('#periodItems') && ($('#periodItems').textContent = items);
+  $('#periodSum') && ($('#periodSum').textContent = formatPrice(sum));
+  $('#periodAvg') && ($('#periodAvg').textContent = formatPrice(arr.length? Math.round(sum/arr.length):0));
+  const tbody = $('#reportPeriodOrders');
+  if(tbody){
+    if(arr.length===0){
+      tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-4 text-center text-sm text-muted-foreground">За период заявок нет</td></tr>';
+    } else {
+      tbody.innerHTML = arr.map(o=>{
+        const osum = o.items.reduce((a,it)=>a+it.qty*it.price,0);
+        const st = orderStatusMeta(o.status);
+        return `<tr><td class="px-3 py-2 font-mono text-xs">#${o.id}</td><td class="px-3 py-2 text-xs">${fmtIso(o.created)}</td><td class="px-3 py-2 text-xs">${supplierName(o.supplierId)}</td><td class="px-3 py-2 text-sm">${o.items.length}</td><td class="px-3 py-2 text-sm font-semibold">${formatPrice(osum)}</td><td class="px-3 py-2"><span class="badge ${st.badge}">${st.label}</span></td></tr>`;
+      }).join('');
+    }
+  }
+  const byProd = {};
+  arr.forEach(o=> o.items.forEach(it=>{
+    if(!byProd[it.productId]) byProd[it.productId] = {qty:0, sum:0};
+    byProd[it.productId].qty += it.qty;
+    byProd[it.productId].sum += it.qty*it.price;
+  }));
+  const top = Object.entries(byProd).sort((a,b)=> b[1].sum - a[1].sum).slice(0,5);
+  const topEl = $('#reportPeriodTop');
+  if(topEl){
+    if(top.length===0){
+      topEl.innerHTML = '<div class="text-sm text-muted-foreground">Нет данных за период</div>';
+    } else {
+      const max = Math.max(1, ...top.map(([,v])=>v.sum));
+      topEl.innerHTML = top.map(([pid,v])=>{
+        const p = state.products.find(x=>x.id===Number(pid));
+        const w = Math.round(v.sum/max*100);
+        return `<div><div class="flex justify-between text-xs font-semibold"><span class="truncate pr-2">${p?p.name:'#'+pid} • ${v.qty} шт</span><span>${formatPrice(v.sum)}</span></div><div class="mt-1 h-2 rounded-full bg-muted overflow-hidden"><div class="h-full bg-accent transition-all duration-500" style="width:${w}%"></div></div></div>`;
+      }).join('');
+    }
+  }
 }
 
 function openProductModal(id){
@@ -459,13 +548,13 @@ function openProductModal(id){
   $('#productModalTitle').textContent = isEdit ? 'Редактировать товар' : 'Добавить товар';
   $('#productId').value = p? p.id : '';
   $('#pName').value = p? p.name : '';
-  $('#pSku').value = p? p.sku : 'GLM-' + Math.floor(100+Math.random()*900);
+  $('#pSku').value = p? p.sku : '';
   $('#pCategory').value = p? p.category : CATEGORIES[0];
   $('#pSupplier').value = p? String(p.supplierId) : String(SUPPLIERS[0].id);
-  $('#pQty').value = p? p.qty : 5;
-  $('#pMin').value = p? p.min : 10;
-  $('#pPrice').value = p? p.price : 999;
-  $('#pLocation').value = p? p.location : 'A-01-01';
+  $('#pQty').value = p? p.qty : '';
+  $('#pMin').value = p? p.min : '';
+  $('#pPrice').value = p? p.price : '';
+  $('#pLocation').value = p? p.location : '';
   $('#pUnit').value = p? p.unit : 'шт';
   $('#productModal').classList.remove('hidden');
   document.body.style.overflow='hidden';
@@ -720,7 +809,7 @@ function bind(){
       qty: Math.max(0, Number($('#pQty').value)),
       min: Math.max(1, Number($('#pMin').value)),
       price: Math.max(0, Number($('#pPrice').value)),
-      location: $('#pLocation').value.trim() || 'A-01-01',
+      location: $('#pLocation').value.trim(),
       unit: $('#pUnit').value.trim() || 'шт'
     };
     if(!data.name || !data.sku){ toast('Заполни название и артикул'); return; }
@@ -928,6 +1017,67 @@ function bind(){
     const ws=XLSX.utils.aoa_to_sheet([['Галамарт — Отчёт: Дефицит'],['Дата', new Date().toLocaleDateString('ru-RU')],[]].concat(data));
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Дефицит'); XLSX.writeFile(wb, 'galamart-deficit.xlsx'); toast('Excel дефицита скачан');
   });
+
+  // Отчёт за период
+  $('#periodPreset')?.addEventListener('change', ()=>{
+    const custom = $('#periodPreset').value==='custom';
+    $('#periodFromWrap')?.classList.toggle('hidden', !custom);
+    $('#periodToWrap')?.classList.toggle('hidden', !custom);
+    if(custom){
+      const f=$('#periodFrom'); const t=$('#periodTo');
+      const today=new Date();
+      const from=new Date(today); from.setDate(from.getDate()-29);
+      if(f && !f.value) f.value=isoDate(from);
+      if(t && !t.value) t.value=isoDate(today);
+    }
+    renderPeriodReport();
+  });
+  $('#periodFrom')?.addEventListener('change', renderPeriodReport);
+  $('#periodTo')?.addEventListener('change', renderPeriodReport);
+  $('#btnPdfPeriod')?.addEventListener('click', ()=>{
+    const {jsPDF}=window.jspdf||{}; if(!jsPDF){ toast('PDF библиотека не загрузилась'); return; }
+    try{
+      const doc=new jsPDF();
+      doc.addFileToVFS('DejaVuSans.ttf', DEJAVU_B64);
+      doc.addFont('DejaVuSans.ttf','DejaVuSans','normal');
+      doc.setFont('DejaVuSans');
+      const {text}=periodRange();
+      const {arr, items, sum}=periodStats();
+      doc.setFontSize(13); doc.text('Галамарт — Отчёт за период',14,18);
+      doc.setFontSize(10); doc.text('Период: '+text,14,24);
+      doc.text('Сформирован: '+new Date().toLocaleDateString('ru-RU'),14,30);
+      doc.text(`Заявок: ${arr.length}  |  Позиций: ${items}  |  Сумма: ${new Intl.NumberFormat('ru-RU').format(sum)} ₽`,14,36);
+      let y=46; doc.setFontSize(11); doc.text('Заявки за период:',14,y); y+=6; doc.setFontSize(9);
+      if(arr.length===0){ doc.text('За период заявок нет',14,y); }
+      else arr.forEach(o=>{
+        const osum=o.items.reduce((a,it)=>a+it.qty*it.price,0);
+        const line=`#${o.id} ${fmtIso(o.created)} | ${supplierName(o.supplierId)} | ${o.items.length} поз. | ${new Intl.NumberFormat('ru-RU').format(osum)} ₽ | ${orderStatusMeta(o.status).label}`;
+        const lines=doc.splitTextToSize(line,180);
+        doc.text(lines,14,y); y+=lines.length*5+2;
+        if(y>280){ doc.addPage(); y=14; doc.setFont('DejaVuSans'); }
+      });
+      const byProd={}; arr.forEach(o=>o.items.forEach(it=>{ if(!byProd[it.productId]) byProd[it.productId]={qty:0,sum:0}; byProd[it.productId].qty+=it.qty; byProd[it.productId].sum+=it.qty*it.price; }));
+      const top=Object.entries(byProd).sort((a,b)=>b[1].sum-a[1].sum).slice(0,10);
+      y+=4; doc.setFontSize(11); doc.text('Топ товаров:',14,y); y+=6; doc.setFontSize(9);
+      if(top.length===0){ doc.text('— нет данных',14,y); }
+      else top.forEach(([pid,v])=>{ const p=state.products.find(x=>x.id===Number(pid)); const line=`${p?p.name:'#'+pid} — ${v.qty} шт — ${new Intl.NumberFormat('ru-RU').format(v.sum)} ₽`; const lines=doc.splitTextToSize(line,180); doc.text(lines,14,y); y+=lines.length*5+2; if(y>280){doc.addPage(); y=14;} });
+      doc.save('galamart-period.pdf'); toast('PDF отчёта за период скачан');
+    }catch(e){ console.error(e); toast('Ошибка PDF: '+e.message); }
+  });
+  $('#btnExcelPeriod')?.addEventListener('click', ()=>{
+    if(typeof XLSX==='undefined'){ toast('Excel библиотека не загрузилась'); return; }
+    const {text}=periodRange();
+    const {arr, items, sum}=periodStats();
+    const head=[['Галамарт — Отчёт за период'],['Период', text],['Сформирован', new Date().toLocaleDateString('ru-RU')],['Заявок', arr.length],['Позиций', items],['Сумма', sum],[]];
+    const ordersData = arr.length
+      ? [['№','Дата','Поставщик','Позиций','Сумма','Статус']].concat(arr.map(o=>{ const osum=o.items.reduce((a,it)=>a+it.qty*it.price,0); return [o.id, o.created, supplierName(o.supplierId), o.items.length, osum, orderStatusMeta(o.status).label]; }))
+      : [['За период заявок нет']];
+    const byProd={}; arr.forEach(o=>o.items.forEach(it=>{ if(!byProd[it.productId]) byProd[it.productId]={qty:0,sum:0}; byProd[it.productId].qty+=it.qty; byProd[it.productId].sum+=it.qty*it.price; }));
+    const topData=[['Товар','Кол-во','Сумма']].concat(Object.entries(byProd).sort((a,b)=>b[1].sum-a[1].sum).map(([pid,v])=>{ const p=state.products.find(x=>x.id===Number(pid)); return [p?p.name:'#'+pid, v.qty, v.sum]; }));
+    const ws=XLSX.utils.aoa_to_sheet(head.concat([['Заявки за период']]).concat(ordersData).concat([[]]).concat([['Топ товаров']]).concat(topData));
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Период'); XLSX.writeFile(wb, 'galamart-period.xlsx'); toast('Excel отчёта за период скачан');
+  });
+
   document.addEventListener('keydown', e=>{
     if(e.key==='Escape'){ closeProductModal(); closeOrderModal(); closeAdminConfirm(); }
   });
