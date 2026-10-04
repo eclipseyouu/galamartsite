@@ -40,44 +40,64 @@ def _spread(n):
     return [0.15 + 0.70 * i / (n - 1) for i in range(n)]
 
 
+def _two_line(t):
+    if len(t) <= 12 or " " not in t:
+        return t
+    mid = len(t) / 2
+    spaces = [i for i, c in enumerate(t) if c == " "]
+    cut = min(spaces, key=lambda i: abs(i - mid))
+    return t[:cut] + "\n" + t[cut + 1:]
+
+
 def idef0(fname, ttl, box_title, inputs, controls, mechanisms, outputs,
           node="А0"):
-    fig, ax = new_fig()
-    title(ax, ttl)
-    bx0, bx1, by0, by1 = 5.2, 10.8, 4.1, 6.1
+    fig, ax = plt.subplots(figsize=(7.4, 5.8), dpi=150)
+    ax.set_xlim(0.9, 8.3)
+    ax.set_ylim(0.8, 6.25)
+    ax.axis("off")
+    ax.text(4.6, 6.0, ttl, ha="center", va="center", fontsize=13,
+            fontweight="bold", color=INK)
+    bx0, bx1, by0, by1 = 2.9, 6.3, 2.35, 4.05
     ax.add_patch(FancyBboxPatch((bx0, by0), bx1 - bx0, by1 - by0,
-                 boxstyle="round,pad=0.03,rounding_size=0.1", linewidth=1.6,
+                 boxstyle="round,pad=0.03,rounding_size=0.08", linewidth=1.6,
                  edgecolor=SLATE, facecolor=LIGHT, zorder=2))
-    ax.text((bx0 + bx1) / 2, by1 - 0.3, node, ha="center", va="center",
-            fontsize=10.5, color=SLATE, zorder=4)
-    ax.text((bx0 + bx1) / 2, (by0 + by1) / 2 - 0.18, box_title, ha="center",
-            va="center", fontsize=12.5, fontweight="bold", color=INK, zorder=4,
+    ax.text((bx0 + bx1) / 2, by1 - 0.26, node, ha="center", va="center",
+            fontsize=9.5, color=SLATE, zorder=4)
+    ax.text((bx0 + bx1) / 2, (by0 + by1) / 2 - 0.14, box_title, ha="center",
+            va="center", fontsize=11.5, fontweight="bold", color=INK, zorder=4,
             wrap=True)
+    # controls (top)
+    n = len(controls)
+    xs = ([bx0 + 0.8, bx1 - 0.8] if n == 2 else
+          [bx0 + (bx1 - bx0) * (i + 1) / (n + 1) for i in range(n)])
+    for x, t in zip(xs, controls):
+        arrow(ax, (x, 5.35), (x, by1))
+        ax.text(x, 5.44, _two_line(t), ha="center", va="bottom", fontsize=9,
+                color=INK)
     # inputs (left)
     n = len(inputs)
     for i, t in enumerate(inputs):
         y = by1 - (by1 - by0) * (i + 1) / (n + 1)
-        arrow(ax, (1.4, y), (bx0, y))
-        ax.text(1.25, y, t, ha="right", va="center", fontsize=10, color=INK)
-    # controls (top)
-    for i, t in enumerate(controls):
-        x = bx0 + (bx1 - bx0) * _spread(len(controls))[i]
-        arrow(ax, (x, 8.5), (x, by1))
-        ax.text(x, 8.62, t, ha="center", va="bottom", fontsize=9.5, color=INK)
-    # mechanisms (bottom)
-    for i, t in enumerate(mechanisms):
-        x = bx0 + (bx1 - bx0) * _spread(len(mechanisms))[i]
-        arrow(ax, (x, 1.5), (x, by0))
-        ax.text(x, 1.38, t, ha="center", va="top", fontsize=9.5, color=INK)
+        arrow(ax, (bx0 - 0.6, y), (bx0, y))
+        ax.text(bx0 - 0.7, y, _two_line(t), ha="right", va="center",
+                fontsize=9, color=INK)
     # outputs (right)
     n = len(outputs)
     for i, t in enumerate(outputs):
         y = by1 - (by1 - by0) * (i + 1) / (n + 1)
-        arrow(ax, (bx1, y), (14.6, y))
-        ax.text(14.75, y, t, ha="left", va="center", fontsize=10, color=INK)
-    fig.tight_layout()
+        arrow(ax, (bx1, y), (bx1 + 0.6, y))
+        ax.text(bx1 + 0.7, y, _two_line(t), ha="left", va="center",
+                fontsize=9, color=INK)
+    # mechanisms (bottom)
+    n = len(mechanisms)
+    xs = ([bx0 + 0.8, bx1 - 0.8] if n == 2 else
+          [bx0 + (bx1 - bx0) * (i + 1) / (n + 1) for i in range(n)])
+    for x, t in zip(xs, mechanisms):
+        arrow(ax, (x, 1.55), (x, by0))
+        ax.text(x, 1.44, _two_line(t), ha="center", va="top", fontsize=9,
+                color=INK)
     fig.savefig(os.path.join(OUT, fname), dpi=150, bbox_inches="tight",
-                facecolor="white")
+                pad_inches=0.08, facecolor="white")
     plt.close(fig)
 
 
