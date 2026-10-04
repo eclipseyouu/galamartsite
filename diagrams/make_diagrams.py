@@ -40,14 +40,17 @@ def _spread(n):
     return [0.15 + 0.70 * i / (n - 1) for i in range(n)]
 
 
-def idef0(fname, ttl, box_title, inputs, controls, mechanisms, outputs):
+def idef0(fname, ttl, box_title, inputs, controls, mechanisms, outputs,
+          node="А0"):
     fig, ax = new_fig()
     title(ax, ttl)
     bx0, bx1, by0, by1 = 5.2, 10.8, 4.1, 6.1
     ax.add_patch(FancyBboxPatch((bx0, by0), bx1 - bx0, by1 - by0,
                  boxstyle="round,pad=0.03,rounding_size=0.1", linewidth=1.6,
                  edgecolor=SLATE, facecolor=LIGHT, zorder=2))
-    ax.text((bx0 + bx1) / 2, (by0 + by1) / 2, box_title, ha="center",
+    ax.text((bx0 + bx1) / 2, by1 - 0.3, node, ha="center", va="center",
+            fontsize=10.5, color=SLATE, zorder=4)
+    ax.text((bx0 + bx1) / 2, (by0 + by1) / 2 - 0.18, box_title, ha="center",
             va="center", fontsize=12.5, fontweight="bold", color=INK, zorder=4,
             wrap=True)
     # inputs (left)
